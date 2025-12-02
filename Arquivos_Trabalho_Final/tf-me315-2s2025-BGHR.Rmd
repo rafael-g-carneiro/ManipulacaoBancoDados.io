@@ -1,0 +1,905 @@
+---
+title: "Leitura e Processamento de Dados em Lote"
+subtitle: "ME315-2S2025"
+author: 
+  - "Bruce Trevisan - RA277200"
+  - "Guilherme Duarte Alves Basso - RA240805"
+  - "Heitor Brotto Gomes e Silva - 260181"
+  - "Rafael Gomes Carneiro - RA185462"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: lualatex
+    includes:
+      in_header: columns.tex
+    extra_dependencies:
+      babel: [brazil]
+      unicode-math: null
+      fvextra: null
+      xcolor: dvipsnames
+    toc: TRUE
+    toc_depth: 4
+header-includes: 
+ - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+ - \definecolor{codegray}{RGB}{248,248,248}
+ - \definecolor{4575b4}{RGB}{69,117,180}
+ - \definecolor{d73027}{RGB}{215,48,39}
+---
+
+<!-- Vetor de pacotes necessários -->
+
+```{r, include=FALSE}
+pacotes_necessarios <- c("knitr",
+                         "dplyr",
+                         "readr",
+                         "devtools",
+                         "ggplot2",
+                         "patchwork",
+                         "kableExtra",
+                         "reticulate",
+                         "JuliaCall")
+```
+
+<!-- Funções -->
+
+```{r, include=FALSE}
+verificar_instalar_pacotes <- function(pacotes) {
+  for(pacote in pacotes) {
+    if(!require(pacote, character.only = TRUE)) {
+      install.packages(pacote)
+      library(pacote, character.only = TRUE)
+    }
+  }
+}
+```
+
+```{r, include=FALSE}
+my_kbl <- function(x, format = "latex", booktabs = TRUE, linesep = "", ...) {
+  # Verifica se o pacote kableExtra está instalado
+  if (!requireNamespace("kableExtra", quietly = TRUE)) {
+    stop("O pacote kableExtra é necessário para esta função. Por favor, instale-o com install.packages('kableExtra')")
+  }
+  
+  # Chama a função kable com os parâmetros padrão
+  kableExtra::kbl(x, format = format, booktabs = booktabs, linesep = linesep, ...)
+}
+```
+
+```{r, include=FALSE}
+my_kbl_foot <- function(x, header = NULL, caption = NULL, format = "latex", booktabs = TRUE, linesep = "", position = "center", latex_options = c("hold_position"), ...) {
+  # Verifica se o pacote kableExtra está instalado
+  if (!requireNamespace("kableExtra", quietly = TRUE)) {
+    stop("O pacote kableExtra é necessário para esta função. Por favor, instale-o com install.packages('kableExtra')")
+  }
+  
+  if (is.null(header)) {
+    header = nrow(x)
+  }
+  
+  # Chama a função kable com os parâmetros padrão
+  table0 = kableExtra::kbl(head(x,header), caption = caption, format = format, booktabs = booktabs, linesep = linesep, ...)
+  
+  # Chama a função kable_styling com os parâmetros padrão
+  # table0 = kableExtra::kable_styling(table0, position = position, latex_options = latex_options, ...)
+  
+  # Chama a função footnote com infos sobre x
+  kableExtra::footnote(table0, general = "", general_title = paste0("1-",header," de ",nrow(x)," linhas | ",ncol(x)," colunas"))
+}
+```
+
+<!-- Setup -->
+
+```{r, include=FALSE}
+verificar_instalar_pacotes(pacotes_necessarios)
+```
+
+```{r, include=FALSE}
+## Pacotes com dependência CRAN
+if(!require(vroom)) install.packages("weatherData", repos="http://cran.us.r-project.org")
+if(!require(ggcal)) devtools::install_github("jayjacobs/ggcal")
+```
+
+```{r setup, include=FALSE}
+## Desativa alertas e avisos
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+<!-- Rmd -->
+
+\hfill\pagebreak
+## § Natureza
+
+>
+
+> Este documento apresenta as soluções propostas para as seguintes atividades da disciplina ME315-2S2025:
+
+- **Laboratório nº 2**, apresentado em aula no dia 14 de agosto de 2025;
+- **Desafio nº 2**, que consiste na replicação do Laboratório 2 utilizando a linguagem **Python**;
+- **Trabalho Final**, proposto em 21 de outubro de 2025, que estende a análise para a linguagem **Julia**.
+
+\hfill\newline
+## § Resumo 
+
+>
+
+> São apresentados, a seguir, exemplos de soluções para os problemas mencionados. O **Laboratório 2** consiste em um exercício originalmente elaborado por professores que ministraram a disciplina em semestres anteriores. O **Desafio 2** propõe a reprodução da mesma atividade utilizando a linguagem **Python**, enquanto o **Trabalho Final** expande a abordagem para a linguagem **Julia.**
+
+\hfill\newline
+## § Introdução
+
+>
+
+> A atividade inicial, proposta pelos professores Benilton e Guilherme, tem como objetivo desenvolver habilidades essenciais para estatísticos, especialmente no que se refere à manipulação de conjuntos de dados, incluindo aqueles de grande volume. Com a inclusão das linguagens Python e Julia, o escopo do trabalho ampliou-se, abrangendo agora a comparação entre diferentes ferramentas computacionais.
+
+>
+
+> Em virtude da integração de múltiplas atividades em um único documento, detalhes excessivos sobre cada solução nem sempre são apresentados ao longo do texto. Para uma compreensão mais aprofundada, recomenda-se a consulta ao código-fonte em **RMarkdown** utilizado para gerar este relatório.
+
+>
+
+> Vale ressaltar que a compilação desse código depende da instalação de diversos pacotes e da configuração prévia dos ambientes **R**, **Python** e **Julia.** A instalação das dependências de R é tratada automaticamente pelo documento, porém, os interpretadores de Python e Julia devem estar previamente configurados. Além disso, o arquivo \colorbox{codegray}{$\symtt{columns.tex}$} deve estar presente no mesmo diretório do arquivo Rmd durante a compilação. Interessados em reproduzir ou modificar este relatório devem assegurar-se de atender a todos os requisitos listados.
+
+\hfill\pagebreak
+## § Conjunto de dados (CD): `flights.csv.zip`
+
+>
+
+```{r, results='asis'}
+## Nome do arquivo com os dados
+   file0 = "flights.csv.zip"
+```
+
+```{r, results='asis'}
+## Amostra do CD com os 2 primeiros registros
+   a = readr::read_csv(file = file0, n_max = 2)
+   lista_partes <- split.default(a, cut(1:ncol(a), breaks = seq(0, ncol(a), by = 1)))
+```
+
+```{r, results='asis'}
+## Trata e imprime Tabela 1
+   latex = (lista_partes %>% my_kbl())[1]
+   ss = substring(latex, 14, nchar(latex))
+   s4 = " Colunas}"; s3 = "\\textit{ "; s2 = "\\caption{Os dois primeiros registros do CD.}"; s1 = "\\begin{table}"
+   paste0(s1,s2,ss,s3,file.info(file0)$size * 1e-6," Mb | ",ncol(a),s4) %>% cat()
+```
+
+\hfill\pagebreak
+# Julia
+
+\hrule
+
+```{r}
+## Captura do tempo inicial para monitoramento de performance
+   t0 = Sys.time()
+## Configurando o ambiente em Julia
+   julia_setup(JULIA_HOME = NULL)
+   julia_assign("file0",file0)
+```
+
+```{julia}
+# Instalação de pacotes
+import Pkg
+
+# Verifica se o ambiente já existe e está atualizado
+function setup_environment()
+    env_path = "temp.venv"
+    
+    if isdir(env_path)
+        println("Ambiente Julia já existe. Verificando pacotes...")
+        Pkg.activate(env_path)
+        
+        # Lista de pacotes necessários
+        required_pkgs = ["CSV", "DataFrames", "Dates", "Statistics", "ZipFile", "Plots"]
+        installed_pkgs = keys(Pkg.project().dependencies)
+        
+        # Encontra pacotes faltantes
+        missing_pkgs = setdiff(required_pkgs, installed_pkgs)
+        
+        if !isempty(missing_pkgs)
+            println("Instalando pacotes faltantes: ", missing_pkgs)
+            Pkg.add(collect(missing_pkgs))
+        else
+            println("Todos os pacotes já estão instalados.")
+        end
+    else
+        println("Criando novo ambiente Julia...")
+        Pkg.activate(env_path, shared = true)
+        Pkg.add(["CSV", "DataFrames", "Dates", "Statistics", "ZipFile", "Plots"])
+    end
+end
+
+# Executa setup
+setup_environment()
+
+# Carrega pacotes
+using CSV, DataFrames, Dates, ZipFile, Statistics, Plots
+```
+
+```{julia}
+function getStats(chunk::DataFrame)::DataFrame
+
+    # Filtra companhias aéreas de interesse
+    major_airlines = ("AA", "DL", "UA", "US")
+    filtered = filter(row -> row.AIRLINE in major_airlines, chunk)
+
+    # Remove valores missing no atraso de chegada
+    filtered = filter(row -> !ismissing(row.ARRIVAL_DELAY), filtered)
+
+    # Calcula se o voo está atrasado (>10 minutos)
+    filtered[!, :late] = filtered.ARRIVAL_DELAY .> 10
+
+    return filtered
+end
+```
+
+```{julia}
+function computeStats(processed_data)
+
+    # Cria coluna de data
+    processed_data[!, :Date] = Date.(
+        string.(processed_data.YEAR, "-", 
+               lpad.(string.(processed_data.MONTH), 2, "0"), "-", 
+               lpad.(string.(processed_data.DAY), 2, "0"))
+    )
+    # Agrupa por companhia e data para calcular estatísticas
+    gdf = groupby(processed_data, [:AIRLINE, :Date])
+    result = combine(gdf) do group
+        total_flights = nrow(group)
+        delayed_flights = sum(group.late)
+        perc_delayed = delayed_flights / total_flights
+        return (Perc = perc_delayed,)
+    end
+    
+    return result
+end
+```
+
+```{julia}
+function plot_calendar_heatmap(stats, airline_code)
+    airline_data = filter(row -> row.AIRLINE == airline_code, stats)
+    
+    # Prepara dados para heatmap mensal
+    months = 1:12
+    p = plot(layout = (4, 3), size = (800, 600))
+    
+    for (i, month) in enumerate(months)
+        month_data = filter(row -> month == Dates.month(row.Date), airline_data)
+        
+        if nrow(month_data) > 0
+            heatmap_data = zeros(7, 5)  # 7 dias da semana, 5 semanas máximas
+            
+            for row in eachrow(month_data)
+                day_of_week = Dates.dayofweek(row.Date)
+                week_of_month = ceil(Int, Dates.day(row.Date) / 7)
+                heatmap_data[day_of_week, week_of_month] = row.Perc
+            end
+            
+            # Paleta customizada - branco para 0, gradiente para valores > 0
+            custom_palette = cgrad([
+                RGB(1.0, 1.0, 1.0),    # Branco puro para 0
+                RGB(0.69, 0.85, 0.90), # Azul muito claro
+                RGB(0.49, 0.75, 0.93), # Azul claro
+                RGB(0.27, 0.46, 0.71), # Azul médio (#4575b4)
+                RGB(0.18, 0.20, 0.28)  # (#473027)
+            ])
+            
+            color_limits = (0.0, maximum(heatmap_data) > 0 ? maximum(heatmap_data) : 0.1)
+            
+            heatmap!(subplot = i, heatmap_data, 
+                    title = Dates.monthname(month),
+                    color = custom_palette,
+                    clims = color_limits,
+                    xticks = false,        # Remove ticks do eixo X
+                    yticks = (1:7, ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]))
+        end
+    end
+    return p
+end
+```
+
+```{julia}
+function computeMoreStats(stats)
+    # Primeiro, filtra apenas as companhias de interesse
+    stats_filtrado = filter(row -> row.AIRLINE in ["AA", "DL", "UA", "US"], stats)
+    
+    # Agrupa e calcula estatísticas
+    return combine(
+        groupby(stats_filtrado, :AIRLINE),
+        :Perc => (x -> round(mean(x) * 100, digits=2)) => :Atraso_Medio,
+        :Perc => (x -> round(maximum(x) * 100, digits=2)) => :Atraso_Maximo
+    )
+end
+```
+
+```{julia}
+# Especificação de tipos para leitura mais rápida
+types_dict = Dict(
+    :DAY => Int32,
+    :MONTH => Int32, 
+    :YEAR => Int32,
+    :AIRLINE => String,
+    :ARRIVAL_DELAY => Union{Int32, Missing}
+);
+
+# Leitura apenas das colunas necessárias
+selected_cols = ["DAY", "MONTH", "YEAR", "AIRLINE", "ARRIVAL_DELAY"];
+
+# z
+vetor_dataframes = [];
+zip_archive = ZipFile.Reader(file0);
+try
+    csv_file = zip_archive.files[1]
+    chunks = CSV.Chunks(csv_file, select = selected_cols, types = types_dict, ntasks = 5)
+    for (i,chunk) in enumerate(chunks)
+        df_chunk = DataFrame(chunk)
+        println("Processando chunk #$i (#$(nrow(df_chunk)) linhas)")
+        push!(vetor_dataframes, getStats(df_chunk))
+    end
+finally
+    close(zip_archive)
+end
+
+# Agregando resultados
+df_final = reduce(vcat, vetor_dataframes);
+
+# Computando estatísticas
+final_stats = computeStats(df_final);
+
+# Ordenação final
+sort!(final_stats, [:AIRLINE, :Date]);
+
+# Gera gráficos para cada companhia
+g1_julia = plot_calendar_heatmap(final_stats, "AA");
+g2_julia = plot_calendar_heatmap(final_stats, "DL") ;
+g3_julia = plot_calendar_heatmap(final_stats, "UA");
+g4_julia = plot_calendar_heatmap(final_stats, "US");
+```
+
+\hfill\pagebreak
+
+```{julia}
+display(g1_julia)
+```
+
+\begin{center}
+   Figura: American Airlines (AA) - Julia
+\end{center}
+
+\hfill\pagebreak
+
+```{julia}
+display(g2_julia)
+```
+
+\begin{center}
+   Figura: Delta Air Lines (DL) - Julia
+\end{center}
+
+\hfill\pagebreak
+
+```{julia}
+display(g3_julia)
+```
+
+\begin{center}
+   Figura: United Airlines (UA) - Julia
+\end{center}
+
+\hfill\pagebreak
+
+```{julia}
+display(g4_julia)
+```
+
+\begin{center}
+   Figura: US Airways (US) - Julia
+\end{center}
+
+>
+
+```{r}
+## Captura do tempo final
+   t1 = Sys.time()
+```
+
+\begin{center}
+   $\Delta t=$ `r delta1 = difftime(t1,t0,units = "secs"); delta1` $s$
+\end{center}
+
+>
+
+\hrule
+
+\hfill\pagebreak
+# R
+
+\hrule
+
+```{r}
+## Captura do tempo inicial para monitoramento de performance
+   t0 = Sys.time()
+```
+
+```{r}
+   getStats = function(input, pos) {
+     
+     # Filtra os dados nas cias. de interesse e remove linhas sem valores de atraso
+     input %>%
+       filter(
+         AIRLINE %in% c("AA", "DL", "UA", "US"),
+         !is.na(ARRIVAL_DELAY)
+       ) %>%
+       
+       # Agrupa dados por dia, mês e cia. 
+       group_by(DAY, MONTH, AIRLINE) %>%
+       
+       # Cria coluna de tipo booleano, TRUE para atraso significativo (>10 minutos)
+       mutate(late = (ARRIVAL_DELAY > 10))
+   }
+```
+
+```{r}
+## Define colunas específicas para leitura eficiente dos dados CSV
+   mycols = cols_only(
+     DAY = 'i',          # Dia do mês (inteiro)
+     MONTH = 'i',        # Mês (inteiro) 
+     YEAR = 'i',         # Ano (inteiro)
+     AIRLINE = 'c',      # Código da Cia. (string)
+     ARRIVAL_DELAY = 'i' # Tempo de atraso em minutos (inteiro)
+   )
+
+## Processa os dados em lote
+   in2 = read_csv_chunked(
+     file = file0,                               # Nome do arquivo
+     callback = DataFrameCallback$new(getStats), # Função a ser usada no processamento de cada lote.
+     chunk_size = 1e5,                           # Tamanho do lote (100.000 linhas)
+     col_types = mycols                          # Restrição da leitura às colunas pré especificadas.
+   )
+```
+
+```{r}
+   computeStats <- function(input) {
+     input %>%
+       
+       # Cria uma coluna de data a partir das colunas com dados de ano, mês e dia.
+       mutate(DATE = as.Date(paste(YEAR, MONTH, DAY, sep = "-"))) %>%
+       
+       # Agrupa os dados por cia. e data
+       group_by(AIRLINE, DATE) %>%
+       
+       # Calcula atraso diário percentual para cada cia.
+       reframe(
+         Perc = sum(1 * (late)) / n()  # Converte valores booleanos para inteiros (1 ou 0) e calcula a média da sua soma
+       )
+   }
+```
+
+```{r}
+   computeMoreStats = function(stats) {
+     stats %>%
+       
+       # Seleciona
+       filter(AIRLINE %in% c("AA", "DL", "UA", "US")) %>%
+       
+       # Agrupa os dados por cia.
+       group_by(AIRLINE) %>%
+       
+       # Calcula o atraso percentual de cada cia.
+       reframe(
+         Média = round(mean(Perc) * 100, 2),
+         Máx = round(max(Perc) * 100, 2)
+       ) %>%
+       arrange(AIRLINE)
+   }
+```
+
+```{r}
+## Aplica funções com computações estatísticas aos dados processados
+   in4 <- computeStats(in2)
+```
+
+```{r}
+## Define paleta de cores para visualização dos caledários
+## Grandiente de azul a vermelho para representação da magnitude dos atrasos
+   pal <- scale_fill_gradient(low = "#4575b4",   # Azul (Pouco)
+                              high = "#d73027")  # Vermelho (Muito)
+
+## Base do calendário para visualização das estatísticas de atraso
+   baseCalendario <- function(stats, cia) {
+     
+     # Filtra os dados nas cias. de interesse
+     input <- stats %>% 
+       filter(AIRLINE == cia)
+     
+     # Cria mapa de calor no calendário usando função do pacote ggcal
+     ggcal(input$DATE, input$Perc)
+   }
+
+## Gera os calendários para visualização de cada cia.
+   g1 <- baseCalendario(in4, "AA") + 
+     pal + 
+     ggtitle("American Airlines (AA)")
+   
+   g2 <- baseCalendario(in4, "DL") + 
+     pal + 
+     ggtitle("Delta Air Lines (DL)")
+   
+   g3 <- baseCalendario(in4, "UA") + 
+     pal + 
+     ggtitle("United Airlines (UA)")
+   
+   g4 <- baseCalendario(in4, "US") + 
+     pal + 
+     ggtitle("US Airways (US)")
+```
+
+```{r, fig.align='center', fig.height=4}
+## Imprime calendários
+   g1 + g2
+```
+
+```{r, fig.align='center', fig.height=4, fig.cap=c("Mapa de calor dos vôos atrasados das Cias. aéereas AA, DL, UA e US, respectivamente")}
+   g3 + g4
+```
+
+>
+
+```{r}
+## Captura do tempo final
+   t1 = Sys.time()
+```
+
+\begin{center}
+   $\Delta t=$ `r delta2 = difftime(t1,t0,units = "secs"); delta2` $s$
+\end{center}
+
+>
+
+\hrule
+
+\hfill\pagebreak
+# Python
+
+\hrule
+
+```{r, include=FALSE}
+## Captura do tempo inicial para monitoramento de performance
+   t0 = Sys.time()
+```
+
+```{r}
+## Inicia sessão python
+   venv_python = "temp.venv"
+   if(!virtualenv_exists(venv_python)){ virtualenv_create(venv_python, packages = c("pip","setuptools","wheel")) }
+
+   py_install("pandas", envname = venv_python)
+   py_install("calplot", envname = venv_python)
+   py_install("pyarrow", envname = venv_python)
+   use_virtualenv(venv_python)
+```
+
+```{python}
+def getStats(flight_chunk, chunk_list):
+  
+    # Seleção das cias.
+    major_airlines = ['AA', 'DL', 'UA', 'US']
+    
+    # Seleciona colunas relevantes no processamento
+    filtered_chunk = flight_chunk[['DAY', 'MONTH', 'YEAR', 'AIRLINE', 'ARRIVAL_DELAY']]
+    
+    # Filtra os dados nas cias.
+    filtered_chunk = filtered_chunk[filtered_chunk['AIRLINE'].isin(major_airlines)]
+    
+    # Remove linhas sem valores de atraso nos vôos
+    filtered_chunk = filtered_chunk.dropna(subset=['ARRIVAL_DELAY'])
+    
+    # Indentifica vôos com atraso significativos (> 10 minutos)
+    filtered_chunk['late'] = filtered_chunk['ARRIVAL_DELAY'] > 10
+    
+    # Anexa lote processado a lista de resultados
+    chunk_list.append(filtered_chunk)
+```
+
+```{python}
+def computeStats(flight_data):
+
+    # Cria coluna com valores de data a partir de colunas individuais com informações de tempo
+    flight_data['date'] = pd.to_datetime(
+        flight_data[['YEAR', 'MONTH', 'DAY']], 
+        format="%Y-%m-%d"
+    )
+    
+    # Seleciona apenas as colunas relevantes para agregação
+    processed_data = flight_data[['date', 'AIRLINE', 'ARRIVAL_DELAY', 'late']]
+    
+    # Agrupa por cia. e data para calcular estatísticas de atraso
+    daily_stats = processed_data.groupby(['AIRLINE', 'date']).agg(
+        delayed_count=('late', 'sum'),      # Count of delayed flights
+        total_flights=('AIRLINE', 'count')  # Total flights in group
+    ).reset_index()
+    
+    # Cálculo do atraso percentual
+    daily_stats['Perc'] = daily_stats['delayed_count'] / daily_stats['total_flights']
+    
+    # Retorna apenas colunas relevantes
+    return daily_stats[['AIRLINE', 'date', 'Perc']]
+```
+
+```{python}
+def computeMoreStats(stats):
+    import pandas as pd
+    
+    airlines = ['AA', 'DL', 'UA', 'US']
+    resultados = []
+    
+    for airline in airlines:
+        airline_data = stats[stats['AIRLINE'] == airline]
+        
+        atraso_medio = round(airline_data['Perc'].mean() * 100, 2)
+        atraso_maximo = round(airline_data['Perc'].max() * 100, 2)
+            
+        resultados.append({
+            'AIRLINE': airline,
+            'atraso_medio': atraso_medio,
+            'atraso_maximo': atraso_maximo,
+        })
+    
+    return pd.DataFrame(resultados)
+```
+
+```{python}
+# Bibliotecas
+import matplotlib.pyplot as plt
+import calplot
+import pandas as pd
+
+## Nome do arquivo com os dados
+arquivo_csv = 'flights.csv.zip'
+
+# Define o tamanho de cada lote a ser lido
+tamanho_chunck = 1e5
+
+# Lista para armazenar os subconjuntos processados
+subconjuntos_processados = []
+
+# Cria um objeto leitor que vai iterar sobre o CD
+leitor_csv = pd.read_csv(arquivo_csv, chunksize=tamanho_chunck)
+
+# Itera sobre cada chunk do CD
+for chunck in leitor_csv:
+    getStats(chunck,subconjuntos_processados)
+
+# Concatena todos os subconjuntos em um único DataFrame
+df_final = pd.concat(subconjuntos_processados, ignore_index=True)
+
+# Computa estatísticas
+stats = computeStats(df_final)
+```
+
+```{python include=FALSE}
+# Gera pdf para cada um dos calendários
+cAA = stats[stats['AIRLINE'] == 'AA']
+cAA = cAA.set_index('date')
+cal1 = calplot.calplot(data=cAA['Perc'],suptitle=f'AA',cmap='YlGn',colorbar=True)
+plt.savefig('grafico_AA_atrasos.pdf')
+plt.close()
+
+cDL = stats[stats['AIRLINE'] == 'DL']
+cDL = cDL.set_index('date')
+cal2 = calplot.calplot(data=cDL['Perc'],suptitle=f'DL',cmap='YlGn',colorbar=True)
+plt.savefig('grafico_DL_atrasos.pdf')
+plt.close()
+
+cUA = stats[stats['AIRLINE'] == 'UA']
+cUA = cUA.set_index('date')
+cal3 = calplot.calplot(data=cUA['Perc'],suptitle=f'UA',cmap='YlGn',colorbar=True)
+plt.savefig('grafico_UA_atrasos.pdf')
+plt.close()
+
+cUS = stats[stats['AIRLINE'] == 'US']
+cUS = cUS.set_index('date')
+cal4 = calplot.calplot(data=cUS['Perc'],suptitle=f'US',cmap='YlGn',colorbar=True)
+plt.savefig('grafico_US_atrasos.pdf')
+plt.close()
+```
+
+```{r, out.width="1.15\\linewidth", include=TRUE, fig.align="center", echo=FALSE}
+## Imprime os calendários
+   knitr::include_graphics("grafico_AA_atrasos.pdf")
+```
+
+```{r, out.width="1.15\\linewidth", include=TRUE, fig.align="center", echo=FALSE}
+   knitr::include_graphics("grafico_DL_atrasos.pdf")
+```
+
+```{r, out.width="1.15\\linewidth", include=TRUE, fig.align="center", echo=FALSE}
+   knitr::include_graphics("grafico_UA_atrasos.pdf")
+```
+
+```{r, out.width="1.15\\linewidth", include=TRUE, fig.align="center", fig.cap=c("Mapa de calor dos vôos atrasados das Cias. aéreas AA, DL, UA e US, respectivamente. (Obtida através do Python)"), echo=FALSE}
+   knitr::include_graphics("grafico_US_atrasos.pdf")
+```
+
+```{r, eval=FALSE}
+## Encerra sessão Python (Chunk Desativada)
+   virtualenv_remove(venv_python)
+```
+
+>
+
+```{r}
+## Captura do tempo final
+   t1 = Sys.time()
+```
+
+\begin{center}
+   $\Delta t=$ `r delta3 = difftime(t1,t0,units = "secs"); delta3` $s$
+\end{center}
+
+>
+
+\hrule
+
+\hfill\pagebreak
+## § Resultados e Comparações (Julia--R)
+
+>
+
+:::::: {.cols data-latex=""}
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 2: Média de vôos atrasados por Cia estudada e dia (Obtida através do Julia)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Tabela kable()
+   stats_julia = julia_eval("final_stats")
+   stats_julia %>% my_kbl_foot(header = 10)
+```
+:::
+
+::: {.col data-latex="{0.09\textwidth}"}
+\ 
+<!-- an empty Div (with a white space), serving as
+a column separator -->
+:::
+
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 3: Média de vôos atrasados por Cia estudada e dia (Obtida através do R)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Tabela kable()
+   in4 %>% my_kbl_foot(header = 10)
+```
+:::
+::::::
+
+>
+
+:::::: {.cols data-latex=""}
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 4: Média de vôos atrasados por Cia estudada (Obtida através do Julia)
+\end{center}
+
+\centering
+```{julia}
+## Estatísticas extras
+MoreStats = computeMoreStats(final_stats);
+```
+
+```{r, results='asis'}
+## Tabela kable()
+   moreStats_julia = julia_eval("MoreStats")
+   moreStats_julia %>% my_kbl()
+```
+:::
+
+::: {.col data-latex="{0.09\textwidth}"}
+\ 
+<!-- an empty Div (with a white space), serving as
+a column separator -->
+:::
+
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 5: Média de vôos atrasados por Cia estudada (Obtida através do R)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Tabela kable()
+   computeMoreStats(in4) %>% my_kbl()
+```
+:::
+::::::
+
+\hfill\pagebreak
+## § Resultados e Comparações (Julia--Python)
+
+>
+
+:::::: {.cols data-latex=""}
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 2: Média de vôos atrasados por Cia estudada e dia (Obtida através do Julia)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Tabela kable()
+   stats_julia %>% my_kbl_foot(header = 10)
+```
+:::
+
+::: {.col data-latex="{0.09\textwidth}"}
+\ 
+<!-- an empty Div (with a white space), serving as
+a column separator -->
+:::
+
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 6: Média de vôos atrasados por Cia estudada e dia (Obtida através do Python)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Atribui o conteúdo da variável stats no ambiente python para a variável in5 no R
+## Tabela kable()
+   stats_python = py$stats
+   stats_python %>% my_kbl_foot(header = 10)
+```
+:::
+::::::
+
+:::::: {.cols data-latex=""}
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 4: Média de vôos atrasados por Cia estudada (Obtida através do Julia)
+\end{center}
+
+\centering
+```{r, results='asis'}
+## Tabela kable()
+   moreStats_julia %>% my_kbl()
+```
+:::
+
+::: {.col data-latex="{0.09\textwidth}"}
+\ 
+<!-- an empty Div (with a white space), serving as
+a column separator -->
+:::
+
+::: {.col data-latex="{0.45\textwidth}"}
+
+\begin{center}
+   Tabela 7: Média de vôos atrasados por Cia estudada (Obtida através do Python)
+\end{center}
+
+\centering
+```{python}
+## Estatísticas extras
+MoreStats = computeMoreStats(stats)
+```
+
+```{r, results='asis'}
+## Tabela kable()
+   moreStats_python = py$MoreStats
+   moreStats_python %>% my_kbl()
+```
+:::
+::::::
+
